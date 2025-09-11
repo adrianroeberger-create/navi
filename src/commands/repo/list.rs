@@ -11,14 +11,14 @@ pub fn main() {
     // We do have entries -> We show them
     // We do not have entries -> We put a message for the user to add one
     if cheats_repos.is_empty() {
-        eprintln!("{}", HELP_NO_REPOSITORIES_FOUND);
+        println!("{}", HELP_NO_REPOSITORIES_FOUND);
 
         // We quit this function
         return;
     }
 
     // The list shouldn't be empty
-    eprintln!("You have locally available the following cheatsheet repositories: \n");
+    println!("You have locally available the following cheatsheet repositories: \n");
 
     let mut i: usize = 0;
     for cheat_repo in cheats_repos {
@@ -31,7 +31,7 @@ pub fn main() {
             hyperlink::new(&format!("file://{}", &cheats_paths[i]), &cheat_repo)
         };
 
-        eprintln!("- {}", content);
+        println!("- {}", content);
         i += 1;
     }
 }

@@ -9,7 +9,6 @@ use crate::prelude::*;
 use std::fs;
 use std::path;
 use std::path::{MAIN_SEPARATOR, MAIN_SEPARATOR_STR};
-use tracing_subscriber::fmt::format;
 
 fn ask_if_should_import_all(finder: &FinderChoice) -> Result<bool> {
     let opts = FinderOpts {
@@ -71,7 +70,7 @@ pub fn main(uri: String, yes_flag: bool, branch: &Option<String>) -> Result<()> 
     let _ = remove_dir(&tmp_pathbuf);
     create_dir(&tmp_pathbuf)?;
 
-    eprintln!("Cloning {} into {}...\n", &actual_uri, &tmp_path_str);
+    eprintln!("Cloning remote \"{}\" into local \"{}\"...\n", &actual_uri, &tmp_path_str);
 
     git::shallow_clone(actual_uri.as_str(), tmp_path_str, &branch)
         .with_context(|| format!("Failed to clone `{actual_uri}`"))?;
@@ -117,7 +116,7 @@ pub fn main(uri: String, yes_flag: bool, branch: &Option<String>) -> Result<()> 
         };
         fs::create_dir_all(&to_folder).unwrap_or(());
         fs::copy(&from, &to)
-            .with_context(|| format!("Failed to copy cheat file `{}` to `{}`", &from.to_string(), &to.to_string()))?;
+            .with_context(|| format!("Failed to copy cheat file \"{}\" to \"{}\"", &from.to_string(), &to.to_string()))?;
     }
 
     // We are copying the .git folder along with the cheat files
@@ -129,61 +128,73 @@ pub fn main(uri: String, yes_flag: bool, branch: &Option<String>) -> Result<()> 
             p.push(&file_path);
             p
         };
-        
-        eprintln!("{file_path}");
 
+        // Code block that should be able to handle correctly the way paths are added since they are different
+        // between platforms.
+        let path_str = if cfg!(windows) {
+            // On windows, the file and the folder are both in absolute paths
+            // One of them needs to be subtracted for us to only have the path that interests us.
 
-        let path_str = format!("{}{}{}", to_folder.to_string(), path::MAIN_SEPARATOR, &file_path);
+            // file_path should be on the temp folder during the transaction, we can use that to
+            // extract the end of the chain with ease
+            let temp_file_path = if (file_path.contains(tmp_path_str.as_str())) {
+                debug!("[Windows] temp_path_str ({:?}) is in file_path ({:?})", &tmp_path_str, &file_path);
+
+                let intermediary_temp_value = file_path.replace(tmp_path_str, "");
+
+                // We try to handle the case where we need to manually remove the separator at the start
+                // of the chain.
+                if intermediary_temp_value.starts_with(path::MAIN_SEPARATOR) {
+                    let size_sep = path::MAIN_SEPARATOR_STR.chars().count();
+                    intermediary_temp_value[size_sep..].to_string()
+                } else {
+                    intermediary_temp_value
+                }
+            } else {
+                String::from(&file_path)
+            };
+
+            format!("{}{}{}", to_folder.to_string(), path::MAIN_SEPARATOR, temp_file_path).to_string()
+        } else {
+            format!("{}{}{}", to_folder.to_string(), path::MAIN_SEPARATOR, &file_path).to_string()
+        };
+
+        // To remove if the snippet above solves the issue of duplicated paths
+        //let path_str = format!("{}{}{}", to_folder.to_string(), path::MAIN_SEPARATOR, &file_path);
         let local_collection = &path_str.split(MAIN_SEPARATOR).collect::<Vec<&str>>();
         let collection_str = if cfg!(windows) {
-            eprintln!("{:?}", local_collection);
-
             local_collection[1..&local_collection.len() - 1].join(MAIN_SEPARATOR_STR)
         } else {
             local_collection[0..&local_collection.len() - 1].join(MAIN_SEPARATOR_STR)
         };
 
-        // This should be able to fix an issue with the clone on windows where both
-        // to_folder and collection_str are equal
-        let local_to_folder = if &to_folder.to_string() != &collection_str {
-            format!(
-                "{}{}",
-                &to_folder.to_string(),
-                &collection_str
-            )
+        // We create a PathBuf variable to check if the path we handle is a folder or a file
+        let current_temp_path_elem = Path::new(&file_path); // File_path for the path already created by git when cloning
+        let final_path_elem = Path::new(&path_str);
+
+        // If our current path is a folder, we create its brother for the final path
+        if current_temp_path_elem.is_dir() {
+            eprintln!("{:?} is a folder!", &file_path);
+            fs::create_dir_all(&path_str).unwrap_or(());
         } else {
-            to_folder.to_string()
-        };
+            // If the current path is a file, we make sure to have its parent created
+            if (! final_path_elem.parent().unwrap().exists()) {
+                fs::create_dir_all(&final_path_elem.parent().unwrap()).unwrap_or(());
+            }
+        }
 
-        // This should be able to fix an issue with the clone on windows where both
-        // to_folder and collection_str are equal
-        let complete_local_path = if &to_folder.to_string() != &collection_str {
-            format!(
-                "{}{}",
-                &to_folder.to_string(),
-                &collection_str
-            )
-        } else {
-            to_folder.to_string()
-        };
+        if current_temp_path_elem.is_file() {
+            eprintln!("{:?} is a file!", &file_path);
+            eprintln!("{:?} is its parent folder!", &current_temp_path_elem.parent());
 
-
-        eprintln!("=> (&to_folder.to_string() == &collection_str) = {}", &to_folder.to_string() == &collection_str);
-        eprintln!("=> To_folder: {}", &to_folder.to_string());
-        eprintln!("=> Collection: {}", &collection_str);
-        eprintln!("=> local_to_folder: {}", &local_to_folder);
-        eprintln!("=> complete_local_path: {}", &complete_local_path);
-
-        debug!("=> {}", &complete_local_path);
-
-        fs::create_dir_all(&local_to_folder).unwrap_or(());
-        fs::copy(&from, &complete_local_path).with_context(|| {
-            format!(
-                "Failed to copy git file `{}` to `{}`",
-                &from.to_string(),
-                &complete_local_path
-            )
-        })?;
+            fs::copy(&from, &path_str).with_context(|| {
+                format!(
+                    "Failed to copy git file \"{}\" to \"{}\"",
+                    &from.to_string(),
+                    &path_str
+                )
+            })?;
+        }
     }
 
     remove_dir(&tmp_pathbuf)?;
