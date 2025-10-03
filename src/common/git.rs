@@ -12,6 +12,8 @@ pub fn shallow_clone(uri: &str, target: &str, branch: &Option<String>) -> Result
         Vec::from(["clone", uri, target, "--depth", "1"])
     };
 
+    debug!("{}", format!("Launching 'git {git_clone_args:?}'"));
+
     Command::new("git")
         .args(git_clone_args)
         .spawn()
@@ -112,13 +114,36 @@ pub fn diff(uri: &str) -> Result<ExitStatus> {
     .wait()?)
 }
 
-pub fn remote_update(uri: &str) -> Result<ExitStatus> {
-    Ok(Command::new("git")
+/// Updates the remote
+pub fn remote_update(uri: &str) -> Result<bool> {
+    // Apparently, using the std::process::Command with git registers the output as an StdErr.
+    // (Is that really an error ???), we then read the stderr instead of the stdout.
+
+    let git_remote_update_output = Command::new("git")
         .current_dir(&uri)
-        .args(["remote", "update"])
-        .spawn()?
-        .wait()?
-    )
+        .args(["remote", "--verbose", "update"])
+        // Even if we don't use the stdout, as a matter of principle, we still pipe it
+        .stdout(Stdio::piped())
+        // The output of the git command is stored within the stderr...
+        .stderr(Stdio::piped())
+        .output()?;
+    let current_git_branch = Command::new("git")
+        .current_dir(&uri)
+        .args(["branch"])
+        .stdout(Stdio::piped())
+        .output()?;
+    let current_git_branch_str = String::from_utf8_lossy(&current_git_branch.stdout).to_string();
+
+    // if in our output, we have a "[up to date] <branch> -> origin/<branch>"
+    // we should return true, otherwise we should return false
+    println!("Git Branch: {:?}", current_git_branch_str);
+
+    // TODO: trim then RegExp match the position of the branch to extract its name and then compare the previous result
+    //      of the remote update to check our current status.
+
+
+
+    Ok(true)
 }
 
 /// Gets the local state of a git repository against its remote
