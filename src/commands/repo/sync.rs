@@ -54,7 +54,9 @@ fn synchronize(cheat_repo: String) -> Result<()> {
     // git::pull(&cheat_repo)?;
     let r = git::remote_update(&cheat_repo)?;
 
-    eprintln!("Status: {:?}", r.code());
+
+
+    eprintln!("Status: {:?}", r);
     return Ok(());
 
     // We delete them since they are now out of tree
@@ -76,6 +78,7 @@ fn synchronize(cheat_repo: String) -> Result<()> {
             let path_str = e.to_str().unwrap_or("");
             let path_string = path_str.to_string();
 
+            // If we have a directory path => we return nothing
             if e.is_dir() {
                 if path_str != cheat_repo && (! path_str.contains(".git")) {
                     cheat_dirs.push(path_str.to_owned());
@@ -84,13 +87,12 @@ fn synchronize(cheat_repo: String) -> Result<()> {
                 return "".to_string();
             }
 
-
             if cheat_files.contains(&path_string) {
 
                 return "".to_string()
             }
 
-            // We substract the path of the cheatsheet root folder to let us get
+            // We subtract the path of the cheatsheet root folder to let us get
             // a matching path for the git_file's condition.
             let cheat_str = cheat_path.display().to_string();
             let cheat_str = cheat_str.as_str();
